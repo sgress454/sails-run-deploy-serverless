@@ -1,4 +1,5 @@
 const _ = require('@sailshq/lodash');
+const mergeDictionaries = require('merge-dictionaries');
 
 module.exports = {
 
@@ -307,6 +308,18 @@ module.exports = {
     catch (unusedErr) {
       // no-op
     }
+
+    // If there is a environment-specific yml file, merge it on top.
+    try {
+      let envServerlessYml = yamljs.parse(_.template(fsx.readFileSync(path.resolve(cwd, 'config', `serverless-${sails.config.environment}.yml`)).toString())({ sails: { config: sails.config } }));
+      mergeDictionaries(serverlessYml, envServerlessYml);
+    }
+    catch (unusedErr) {
+      // no-op
+    }
+
+    // Merge in any options from sails.config.serverless.yml.
+    mergeDictionaries(serverlessYml, sails.config.serverless.yml);
 
     // Supply some defaults.
     _.defaultsDeep(serverlessYml, {
