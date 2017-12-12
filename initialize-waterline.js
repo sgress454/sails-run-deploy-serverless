@@ -6,7 +6,8 @@ var fs = require('fs');
 
 module.exports = function(callback) {
 
-  global.sails = {
+  global.sails = global.sails || {};
+  defaultsDeep(sails, {
     config: {
       appPath: path.resolve(__dirname),
       globals: {
@@ -52,7 +53,7 @@ module.exports = function(callback) {
     },
     on: () => {},
     once: () => {}
-  };
+  });
 
   // Load the sails ORM hook.
   _.set(sails, 'hooks.orm', ormHook(sails));
