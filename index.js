@@ -177,6 +177,7 @@ module.exports = {
     packageJson.dependencies.baggywrinkle = packageJson.dependencies.baggywrinkle || 'latest';
     packageJson.dependencies['babel-polyfill'] = packageJson.dependencies['babel-polyfill'] || '6.26.0';
     packageJson.dependencies['sails-hook-orm'] = packageJson.dependencies['sails-hook-orm'] || '^2.0.0-22';
+    packageJson.dependencies['machine'] = packageJson.dependencies['machine'] || '15.0.0-20';
 
     packageJson.devDependencies = {};
 
@@ -194,15 +195,12 @@ module.exports = {
       for (let filepath of sails.config.serverless.transpile) {
         let filesToTranspile = await readdir(path.resolve(cwd, 'serverless', filepath), [(file) => !!file.match(/\/\.[^\/]+$/)] );
         const transpile = (fileToTranspile, options) => {
-          return new Promise((resolve, reject) => {
-            babel.transformFile(fileToTranspile, options || { presets: ['env'] }, (err, result) => {
-              if (err) { return reject(err); }
-              return resolve(result.code);
-            });
-          });
+          let code = fsx.readFileSync(fileToTranspile).toString();
+          code = code.replace(/(fn:.+?\{)([\w\W]+?)(\}\s+\})/, '$1 try { $2 } catch (e) { return exits.error(e); } $3');
+          return babel.transform(code, options || { presets: ['env'] }).code;
         };
         for (let fileToTranspile of filesToTranspile) {
-          let transformedFile = await transpile(fileToTranspile);
+          let transformedFile = transpile(fileToTranspile);
           fsx.outputFileSync(fileToTranspile, transformedFile);
         }
       }
