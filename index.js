@@ -108,6 +108,7 @@ module.exports = {
 
     else if (inputs.prod === true) {
       if (!sails.config.datastores['serverless-prod'] || !sails.config.datastores['serverless-prod'].adapter) {
+        useOrm = false;
         console.log('Warning -- no `serverless-prod` datastore found.  Deploying without Waterline support!');
         console.log('To suppress this warning, set `orm: false` in your `config/serverless.js` file.');
       }
@@ -117,13 +118,36 @@ module.exports = {
       }
     }
 
+    let useHelpers = (() => {
+
+      try {
+        let helperFiles = fsx.readdirSync(path.resolve(cwd, 'api', 'helpers'));
+        return _.any(helperFiles, (fileName) => { return fileName.match(/^.+\.js/); });
+      } catch (e) {
+        if (e.code === 'ENOENT') {
+          /* ignore */
+        }
+        else {
+          throw e;
+        }
+      }
+
+    })();
+
+
     // Set up the Lambda handler template.
-    let handlerTemplate;
-    if (useOrm) {
-      handlerTemplate = _.template(`require('babel-polyfill');\nmodule.exports.fn = require('baggywrinkle')(require('<%=pathToAction%>'), { bootstrap: require('<%=pathToWaterline%>'), teardown: (cb)=>{sails.hooks.orm.teardown(cb);}, cors: <%=corsOptions%><%=typeof otherOptions !== 'undefined' ? (', '+otherOptions) : '' %>});\n`);
-    } else {
-      handlerTemplate = _.template(`require('babel-polyfill');\nmodule.exports.fn = require('baggywrinkle')(require('<%=pathToAction%>'), { cors: <%=corsOptions%><%=typeof otherOptions !== 'undefined' ? (', '+otherOptions) : '' %>});\n`);
-    }
+    let handlerTemplate = (() => {
+      let bootstrap = [];
+      let teardown = [];
+      if (useHelpers) {
+        bootstrap.push(`require('<%=pathToHelpers%>')`);
+      }
+      if (useOrm) {
+        bootstrap.push(`require('<%=pathToWaterline%>')`);
+        teardown.push('(cb)=>{sails.hooks.orm.teardown(cb);}');
+      }
+      return _.template(`require('babel-polyfill');\nmodule.exports.fn = require('baggywrinkle')(require('<%=pathToAction%>'), { bootstrap: [${bootstrap.join(', ')}], teardown: [${teardown.join(', ')}], cors: <%=corsOptions%><%=typeof otherOptions !== 'undefined' ? (', '+otherOptions) : '' %>});\n`);
+    })();
 
     console.log('Cleaning up previous deployments...');
 
@@ -271,8 +295,9 @@ module.exports = {
       let pathToFunction = path.resolve(cwd, 'serverless', 'functions', actionName + '.js');
       let pathToAction = path.relative(path.dirname(pathToFunction), path.resolve(cwd, 'serverless', 'api', 'controllers', actionName + '.js'));
       let pathToWaterline = path.relative(path.dirname(pathToFunction), path.resolve(cwd, 'serverless', 'initialize-waterline.js'));
+      let pathToHelpers = path.relative(path.dirname(pathToFunction), path.resolve(cwd, 'serverless', 'initialize-helpers.js'));
 
-      fsx.outputFileSync(pathToFunction, handlerTemplate({ pathToAction, pathToWaterline, corsOptions: JSON.stringify(_.get(memo[fnName].events[0].http, 'cors', false)) }));
+      fsx.outputFileSync(pathToFunction, handlerTemplate({ pathToAction, pathToHelpers, pathToWaterline, corsOptions: JSON.stringify(_.get(memo[fnName].events[0].http, 'cors', false)) }));
 
       return memo;
 
@@ -294,10 +319,11 @@ module.exports = {
       let pathToFunction = path.resolve(cwd, 'serverless', 'functions', filePath);
       let pathToAction = path.relative(path.dirname(pathToFunction), authorizerPath);
       let pathToWaterline = path.relative(path.dirname(pathToFunction), path.resolve(cwd, 'serverless', 'initialize-waterline.js'));
+      let pathToHelpers = path.relative(path.dirname(pathToFunction), path.resolve(cwd, 'serverless', 'initialize-helpers.js'));
       serverlessFunctionConfig[fnName] = {
         handler: `functions/${actionName}.fn`,
       };
-      fsx.outputFileSync(pathToFunction, handlerTemplate({ pathToAction, pathToWaterline, corsOptions: true, otherOptions: 'noEnvelope: true' }));
+      fsx.outputFileSync(pathToFunction, handlerTemplate({ pathToAction, pathToHelpers, pathToWaterline, corsOptions: true, otherOptions: 'noEnvelope: true' }));
     });
 
     // Load any serverless file template from config.
@@ -350,6 +376,21 @@ module.exports = {
         datastoresConfig: JSON.stringify(sails.config.datastores)
       });
       fsx.outputFileSync(path.resolve(cwd, 'serverless', 'initialize-waterline.js'), initializeWaterlineCode);
+    }
+
+    // Create "initialize-helpers.js", if any helpers are being included.
+    try {
+      let helperFiles = fsx.readdirSync(path.resolve(cwd, 'api', 'helpers'));
+      if (_.any(helperFiles, (fileName) => { return fileName.match(/^.+\.js/); })) {
+        fsx.copySync(path.resolve(__dirname, 'initialize-helpers.js'), path.resolve(cwd, 'serverless', 'initialize-helpers.js'));
+      }
+    } catch (e) {
+      if (e.code === 'ENOENT') {
+        /* ignore */
+      }
+      else {
+        throw e;
+      }
     }
 
     console.log('Installing dependencies...');
