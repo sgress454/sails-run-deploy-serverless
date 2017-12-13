@@ -29,6 +29,11 @@ module.exports = {
     prod: {
       type: 'boolean',
       defaultsTo: false
+    },
+
+    skipdeps: {
+      type: 'boolean',
+      defaultsTo: false
     }
 
   },
@@ -391,6 +396,10 @@ module.exports = {
       else {
         throw e;
       }
+    }
+
+    if (inputs.skipdeps) {
+      return exits.success('Done!');
     }
 
     console.log('Installing dependencies...');
