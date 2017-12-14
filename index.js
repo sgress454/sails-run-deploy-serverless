@@ -178,6 +178,7 @@ module.exports = {
     packageJson.dependencies['babel-polyfill'] = packageJson.dependencies['babel-polyfill'] || '6.26.0';
     packageJson.dependencies['sails-hook-orm'] = packageJson.dependencies['sails-hook-orm'] || '^2.0.0-22';
     packageJson.dependencies['machine'] = packageJson.dependencies['machine'] || '15.0.0-20';
+    packageJson.dependencies['recursive-readdir'] = packageJson.dependencies['recursive-readdir'] || '2.2.1';
 
     packageJson.devDependencies = {};
 
