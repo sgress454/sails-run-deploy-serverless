@@ -196,7 +196,7 @@ module.exports = {
         let filesToTranspile = await readdir(path.resolve(cwd, 'serverless', filepath), [(file) => !!file.match(/\/\.[^\/]+$/)] );
         const transpile = (fileToTranspile, options) => {
           let code = fsx.readFileSync(fileToTranspile).toString();
-          code = code.replace(/(fn:.+?\{)([\w\W]+?)(\}\s+\})/, '$1 try { $2 } catch (e) { return exits.error(e); } $3');
+          code = code.replace(/(fn:.+?\{)([\w\W]+)(\}\s+\})/, '$1 try { $2 } catch (e) { return exits.error(e); } $3');
           return babel.transform(code, options || { presets: ['env'] }).code;
         };
         for (let fileToTranspile of filesToTranspile) {
