@@ -47,6 +47,10 @@ module.exports = {
 
     notInSailsDir: {
       description: 'It doesn\'t look like the current directory contains a Sails project!'
+    },
+
+    notInProduction: {
+      description: 'This app specifies that it should only be deployed in production mode.  Try `NODE_ENV=production sails run deploy-serverless`'
     }
 
   },
@@ -71,6 +75,11 @@ module.exports = {
       transpile: ['api/controllers', 'api/helpers', 'api/models'],
       orm: true
     });
+
+    // If `requireProd` is true, and we're not in production, bail.
+    if (sails.config.serverless.requireProd && process.env.NODE_ENV !== 'production') {
+      return exits.notInProduction();
+    }
 
     // Make sure you're in a Sails app folder.
     let packageJson;
@@ -98,30 +107,6 @@ module.exports = {
 
     // Assume ORM support is wanted until we find otherwise.
     let useOrm = sails.config.serverless.orm;
-
-    // If the Sails environment is "development", use `serverless-dev` as the datastore.
-    if (sails.config.environment === 'development') {
-      if (!sails.config.datastores['serverless-dev'] || !sails.config.datastores['serverless-dev'].adapter) {
-        useOrm = false;
-        console.log('Warning -- no `serverless-dev` datastore found.  Deploying without Waterline support!');
-        console.log('To suppress this warning, set `orm: false` in your `config/serverless.js` file.');
-      }
-      else {
-        sails.config.datastores = { default: sails.config.datastores['serverless-dev'] };
-      }
-    }
-
-    else if (inputs.prod === true) {
-      if (!sails.config.datastores['serverless-prod'] || !sails.config.datastores['serverless-prod'].adapter) {
-        useOrm = false;
-        console.log('Warning -- no `serverless-prod` datastore found.  Deploying without Waterline support!');
-        console.log('To suppress this warning, set `orm: false` in your `config/serverless.js` file.');
-      }
-      else {
-        sails.config.models.datastore = 'serverless-prod';
-        sails.config.datastores = { default: sails.config.datastores['serverless-prod'] };
-      }
-    }
 
     let useHelpers = (() => {
 
