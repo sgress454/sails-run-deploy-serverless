@@ -17,6 +17,10 @@ module.exports = {
       defaultsTo: false
     },
 
+    c: {
+      type: 'string'
+    },
+
     f: {
       type: 'string'
     },
@@ -93,12 +97,12 @@ module.exports = {
       return exits.notInSailsDir();
     }
 
-    if (!inputs.all && !inputs.f && !inputs.nodeploy) {
-      return exits.badArgs('One of `--all`, `--nodeploy` or `--f <function name>` must be specified.');
+    if (!inputs.all && !inputs.f && !inputs.c && !inputs.nodeploy) {
+      return exits.badArgs('One of `--all`, `--nodeploy`, `--c <controller name>` or `--f <function name>` must be specified.');
     }
 
-    if (!!inputs.all + !!inputs.f + !!inputs.nodeploy > 1) {
-      return exits.badArgs('Only one of `--all`, `--nodeploy` or `--f <function name>` may be specified.');
+    if (!!inputs.all + !!inputs.c + !!inputs.f + !!inputs.nodeploy > 1) {
+      return exits.badArgs('Only one of `--all`, `--nodeploy`, `--c <controller name>` or `--f <function name>` may be specified.');
     }
 
     // Always set `migrate: safe` so that Lambda functions don't try to run migrations.
@@ -204,6 +208,11 @@ module.exports = {
 
       let actionName = target.action || target;
       if (typeof actionName !== 'string') { return memo; }
+
+      // If we're deploying a specific controller, filter out endpoints that don't use actions from that controller.
+      if (inputs.c && actionName.indexOf(`${inputs.c}/`) !== 0) {
+        return memo;
+      }
 
       // Parse out the verb and path from the route definition.
       let {verb:routeVerb, path:routePath} = parseAddress(address);
@@ -350,6 +359,11 @@ module.exports = {
 
     // Merge in the stuff we just created.
     _.merge(serverlessYml, { functions: serverlessFunctionConfig });
+
+    // If we're deploying a single controller, append the controller name to the service.
+    if (inputs.c) {
+      serverlessYml.service += '-' + inputs.c;
+    }
 
     // Output the serverless config.
     fsx.outputFileSync(path.resolve(cwd, 'serverless', 'serverless.yml'), yamljs.stringify(serverlessYml, 100, 2).replace(/'<<<(.*?)>>>'/mg,'$1'));
