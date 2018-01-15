@@ -1,6 +1,6 @@
 {
   "name": "sails-run-deploy-serverless",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Sails command to deploy actions as AWS Lambda functions via the Serverless framework",
   "main": "index.js",
   "scripts": {
