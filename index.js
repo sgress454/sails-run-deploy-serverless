@@ -25,6 +25,10 @@ module.exports = {
       type: 'string'
     },
 
+    j: {
+      type: 'string'
+    },
+
     nodeploy: {
       type: 'boolean',
       defaultsTo: false
@@ -75,10 +79,21 @@ module.exports = {
 
     // Set up default serverless config.
     sails.config.serverless = _.defaults(sails.config.serverless || {}, {
-      include: ['api/controllers', 'api/helpers', 'api/models', 'config/models.js', 'config/datastores.js'],
-      transpile: ['api/controllers', 'api/helpers', 'api/models'],
+      include: ['api/helpers', 'api/models', 'config/models.js', 'config/datastores.js'],
+      transpile: ['api/helpers', 'api/models'],
       orm: true
     });
+
+    // If deploying a job, always add the job's folder to the list of things to include and transpile.
+    if (inputs.j) {
+      sails.config.serverless.include = sails.config.serverless.include.concat([`jobs/${inputs.j}`]);
+      sails.config.serverless.transpile = sails.config.serverless.transpile.concat([`jobs/${inputs.j}`]);
+    }
+    // Otherwise add the controllers and authorizers folders to those lists.
+    else {
+      sails.config.serverless.include = sails.config.serverless.include.concat(['api/controllers','api/authorizers']);
+      sails.config.serverless.transpile = sails.config.serverless.transpile.concat(['api/controllers','api/authorizers']);
+    }
 
     // If `requireProd` is true, and we're not in production, bail.
     if (sails.config.serverless.requireProd && process.env.NODE_ENV !== 'production') {
@@ -97,12 +112,14 @@ module.exports = {
       return exits.notInSailsDir();
     }
 
-    if (!inputs.all && !inputs.f && !inputs.c && !inputs.nodeploy) {
-      return exits.badArgs('One of `--all`, `--nodeploy`, `--c <controller name>` or `--f <function name>` must be specified.');
+    // Make sure we're given something to deploy.
+    if (!inputs.all && !inputs.f && !inputs.c && !inputs.j) {
+      return exits.badArgs('One of `--all`, `--j <job name>` , `--c <controller name>` or `--f <function name>` must be specified.');
     }
 
-    if (!!inputs.all + !!inputs.c + !!inputs.f + !!inputs.nodeploy > 1) {
-      return exits.badArgs('Only one of `--all`, `--nodeploy`, `--c <controller name>` or `--f <function name>` may be specified.');
+    // Make sure we're not given more than one type of thing to deploy.
+    if (!!inputs.all + !!inputs.c + !!inputs.f + !!inputs.j > 1) {
+      return exits.badArgs('Only one of `--all`, `--j <job name>`, `--c <controller name>` or `--f <function name>` may be specified.');
     }
 
     // Always set `migrate: safe` so that Lambda functions don't try to run migrations.
@@ -112,6 +129,7 @@ module.exports = {
     // Assume ORM support is wanted until we find otherwise.
     let useOrm = sails.config.serverless.orm;
 
+    // Determine whether to initialize helpers for the deployed code, by checking whether there _are_ any helpers.
     let useHelpers = (() => {
 
       try {
@@ -133,14 +151,20 @@ module.exports = {
     let handlerTemplate = (() => {
       let bootstrap = [];
       let teardown = [];
+
+      // If we have helpers, make sure they're initialized before the deployed code runs.
       if (useHelpers) {
         bootstrap.push(`require('<%=pathToHelpers%>')`);
       }
+
+      // If we're using the ORM, make sure it's initialized before the deployed code runs.
       if (useOrm) {
         bootstrap.push(`require('<%=pathToWaterline%>')`);
         teardown.push('(cb)=>{sails.hooks.orm.teardown(cb);}');
       }
-      return _.template(`require('babel-polyfill');\nmodule.exports.fn = require('baggywrinkle')(require('<%=pathToAction%>'), { bootstrap: [${bootstrap.join(', ')}], teardown: [${teardown.join(', ')}], cors: <%=corsOptions%><%=typeof otherOptions !== 'undefined' ? (', '+otherOptions) : '' %>});\n`);
+
+      // Output the Lodash template function we'll use to output the Lambda function code.
+      return _.template(`require('babel-polyfill');\nmodule.exports.fn = require('baggywrinkle')(require('<%=pathToMachine%>'), { bootstrap: [${bootstrap.join(', ')}], teardown: [${teardown.join(', ')}], cors: <%=corsOptions%><%=typeof otherOptions !== 'undefined' ? (', '+otherOptions) : '' %>});\n`);
     })();
 
     console.log('Cleaning up previous deployments...');
@@ -174,10 +198,11 @@ module.exports = {
     fsx.outputFile(path.resolve(cwd, 'serverless', 'package.json'), JSON.stringify(packageJson));
 
     // Copy all of the requested folders/files.
-    for (let filepath of sails.config.serverless.include.concat(['api/authorizers'])) {
+    for (let filepath of sails.config.serverless.include) {
       fsx.copySync(path.resolve(cwd, filepath), path.resolve(cwd, 'serverless', filepath));
     }
 
+    // Transpile any files that we're asked to.
     if (sails.config.serverless.transpile) {
 
       console.log('Transpiling code...');
@@ -197,132 +222,188 @@ module.exports = {
 
     }
 
-    // Grab the CORS config.
-    const globalCorsConfig = sails.config.security.cors;
+    //   █████╗  ██████╗████████╗██╗ ██████╗ ███╗   ██╗███████╗
+    //  ██╔══██╗██╔════╝╚══██╔══╝██║██╔═══██╗████╗  ██║██╔════╝
+    //  ███████║██║        ██║   ██║██║   ██║██╔██╗ ██║███████╗
+    //  ██╔══██║██║        ██║   ██║██║   ██║██║╚██╗██║╚════██║
+    //  ██║  ██║╚██████╗   ██║   ██║╚██████╔╝██║ ╚████║███████║
+    //  ╚═╝  ╚═╝ ╚═════╝   ╚═╝   ╚═╝ ╚═════╝ ╚═╝  ╚═══╝╚══════╝
+    //
+    // Deploy one or more actions meant to be reached via an HTTP call.
 
-    // Start an ACL mapping object.
-    let resourceMapping = {};
+    let serverlessFunctionConfig;
 
-    // Loop through each route.
-    let serverlessFunctionConfig = _.reduce(sails.config.routes, (memo, target, address) => {
+    if (!inputs.j) {
 
-      let actionName = target.action || target;
-      if (typeof actionName !== 'string') { return memo; }
+      // Grab the CORS config.
+      const globalCorsConfig = sails.config.security.cors;
 
-      // If we're deploying a specific controller, filter out endpoints that don't use actions from that controller.
-      if (inputs.c && actionName.indexOf(`${inputs.c}/`) !== 0) {
-        return memo;
-      }
+      // Start an ACL mapping object.
+      let resourceMapping = {};
 
-      // Parse out the verb and path from the route definition.
-      let {verb:routeVerb, path:routePath} = parseAddress(address);
+      // Loop through each route.
+      serverlessFunctionConfig = _.reduce(sails.config.routes, (memo, target, address) => {
 
-      // Create a lambda-appropriate path.
-      let lambdaPath = routePath.replace(/\/:(\w+)/g, '/{$1}');
-      if (lambdaPath.match(/\/\*$/)) {
-        lambdaPath = lambdaPath.replace(/\/\*$/, '/{0+}');
-      }
+        let actionName = target.action || target;
+        if (typeof actionName !== 'string') { return memo; }
 
-      // Add an entry to the resource mapping dictionary associating this lambda path with the Sails route address.
-      resourceMapping[(routeVerb ? routeVerb.toLowerCase() + ' ' : '') + lambdaPath] = { address, target };
+        // If we're deploying a specific controller, filter out endpoints that don't use actions from that controller.
+        if (inputs.c && actionName.indexOf(`${inputs.c}/`) !== 0) {
+          return memo;
+        }
 
-      // Create a function name from the action, e.g. 'user/find' => 'user_find'
-      let fnName = _.camelCase(actionName);
+        // Parse out the verb and path from the route definition.
+        let {verb:routeVerb, path:routePath} = parseAddress(address);
 
-      // Start the serverless config for the function.
-      memo[fnName] = {
-        handler: `functions/${actionName}.fn`,
-        events: [
-          {
-            http: {
-              path: lambdaPath,
-              method: routeVerb
+        // Create a lambda-appropriate path.
+        let lambdaPath = routePath.replace(/\/:(\w+)/g, '/{$1}');
+        if (lambdaPath.match(/\/\*$/)) {
+          lambdaPath = lambdaPath.replace(/\/\*$/, '/{0+}');
+        }
+
+        // Add an entry to the resource mapping dictionary associating this lambda path with the Sails route address.
+        resourceMapping[(routeVerb ? routeVerb.toLowerCase() + ' ' : '') + lambdaPath] = { address, target };
+
+        // Create a function name from the action, e.g. 'user/find' => 'user_find'
+        let fnName = _.camelCase(actionName);
+
+        // Start the serverless config for the function.
+        memo[fnName] = {
+          handler: `functions/${actionName}.fn`,
+          events: [
+            {
+              http: {
+                path: lambdaPath,
+                method: routeVerb
+              }
+            }
+          ]
+        };
+
+        // See if we have any pattern vars or wildcards.
+        let params = address.match(/(\/:\w+)|(\/\*)/g);
+
+        if (params) {
+          _.set(memo[fnName].events[0].http, 'request.parameters.paths', _.reduce(params, (memo, param) => {
+            if (param === '/*') {
+              memo['0'] = true;
+            }
+            else {
+              memo[param.substr(2)] = true;
+            }
+            return memo;
+          }, {}));
+        }
+
+        // See if we have any local CORS config.
+        _.set(memo[fnName].events[0].http, 'cors', (() => {
+          if (!_.isUndefined(target.cors) || globalCorsConfig.allRoutes) {
+            if (target.cors === false) {
+              return undefined;
+            }
+            let targetCors = target.cors || {};
+            if (targetCors === true || globalCorsConfig.allRoutes) {
+              return {
+                origin: targetCors.allowOrigins || globalCorsConfig.allowOrigins,
+                headers: _.map((targetCors.allowRequestHeaders || globalCorsConfig.allowRequestHeaders).split(','), (header) => header.trim()),
+                allowCredentials: targetCors.allowCredentials || globalCorsConfig.allowCredentials
+              };
             }
           }
-        ]
-      };
+          return undefined;
+        })());
 
-      // See if we have any pattern vars or wildcards.
-      let params = address.match(/(\/:\w+)|(\/\*)/g);
-
-      if (params) {
-        _.set(memo[fnName].events[0].http, 'request.parameters.paths', _.reduce(params, (memo, param) => {
-          if (param === '/*') {
-            memo['0'] = true;
-          }
-          else {
-            memo[param.substr(2)] = true;
-          }
-          return memo;
-        }, {}));
-      }
-
-      // See if we have any local CORS config.
-      _.set(memo[fnName].events[0].http, 'cors', (() => {
-        if (!_.isUndefined(target.cors) || globalCorsConfig.allRoutes) {
-          if (target.cors === false) {
-            return undefined;
-          }
-          let targetCors = target.cors || {};
-          if (targetCors === true || globalCorsConfig.allRoutes) {
-            return {
-              origin: targetCors.allowOrigins || globalCorsConfig.allowOrigins,
-              headers: _.map((targetCors.allowRequestHeaders || globalCorsConfig.allowRequestHeaders).split(','), (header) => header.trim()),
-              allowCredentials: targetCors.allowCredentials || globalCorsConfig.allowCredentials
-            };
-          }
+        if (typeof memo[fnName].events[0].http.cors === 'undefined') {
+          delete memo[fnName].events[0].http.cors;
         }
-        return undefined;
-      })());
 
-      if (typeof memo[fnName].events[0].http.cors === 'undefined') {
-        delete memo[fnName].events[0].http.cors;
+        // See if any authorizer should be applied to this route.
+        let authorizer = target.authorizer || (target.authorizer !== false && sails.config.serverless.defaultAuthorizer);
+        if (authorizer) {
+          memo[fnName].events[0].http.authorizer = {
+            name: _.camelCase(`authorizers ${authorizer}`),
+            type: 'request',
+            resultTtlInSeconds: 0
+          };
+        }
+
+        // Output a handler.
+        let pathToFunction = path.resolve(cwd, 'serverless', 'functions', actionName + '.js');
+        let pathToMachine = path.relative(path.dirname(pathToFunction), path.resolve(cwd, 'serverless', 'api', 'controllers', actionName + '.js'));
+        let pathToWaterline = path.relative(path.dirname(pathToFunction), path.resolve(cwd, 'serverless', 'initialize-waterline.js'));
+        let pathToHelpers = path.relative(path.dirname(pathToFunction), path.resolve(cwd, 'serverless', 'initialize-helpers.js'));
+
+        fsx.outputFileSync(pathToFunction, handlerTemplate({ pathToMachine, pathToHelpers, pathToWaterline, corsOptions: JSON.stringify(_.get(memo[fnName].events[0].http, 'cors', false)) }));
+
+        return memo;
+
+      }, {});
+
+      // If there's an authorizers folder, create functions for everything in it.
+      let authorizers;
+      try {
+        authorizers = await readdir(path.resolve(cwd, 'serverless', 'api', 'authorizers'));
+      }
+      catch (unusedErr) {
+        authorizers = [];
       }
 
-      // See if any authorizer should be applied to this route.
-      let authorizer = target.authorizer || (target.authorizer !== false && sails.config.serverless.defaultAuthorizer);
-      if (authorizer) {
-        memo[fnName].events[0].http.authorizer = {
-          name: _.camelCase(`authorizers ${authorizer}`),
-          type: 'request',
-          resultTtlInSeconds: 0
+      _.each(authorizers, (authorizerPath) => {
+        let filePath = `authorizers/${path.basename(authorizerPath)}`;
+        let actionName = filePath.replace(/\.js$/,'');
+        let fnName = _.camelCase(actionName);
+        let pathToFunction = path.resolve(cwd, 'serverless', 'functions', filePath);
+        let pathToMachine = path.relative(path.dirname(pathToFunction), authorizerPath);
+        let pathToWaterline = path.relative(path.dirname(pathToFunction), path.resolve(cwd, 'serverless', 'initialize-waterline.js'));
+        let pathToHelpers = path.relative(path.dirname(pathToFunction), path.resolve(cwd, 'serverless', 'initialize-helpers.js'));
+        serverlessFunctionConfig[fnName] = {
+          handler: `functions/${actionName}.fn`,
         };
-      }
+        fsx.outputFileSync(pathToFunction, handlerTemplate({ pathToMachine, pathToHelpers, pathToWaterline, corsOptions: true, otherOptions: 'noEnvelope: true' }));
+      });
+
+      // Output the resource map.
+      fsx.outputFileSync(path.resolve(cwd, 'serverless', 'resources.json'), JSON.stringify(resourceMapping));
+
+    }
+
+    //       ██╗ ██████╗ ██████╗ ███████╗
+    //       ██║██╔═══██╗██╔══██╗██╔════╝
+    //       ██║██║   ██║██████╔╝███████╗
+    //  ██   ██║██║   ██║██╔══██╗╚════██║
+    //  ╚█████╔╝╚██████╔╝██████╔╝███████║
+    //   ╚════╝  ╚═════╝ ╚═════╝ ╚══════╝
+    //
+    // Deploy a job meant to be called via a scheduled event (i.e. a cron job).
+
+    let jobConfig = {};
+    if (inputs.j) {
+
+      // Read in the job config, if any.
+      try {
+        jobConfig = require(path.resolve(cwd, 'jobs', inputs.j, 'config.js'));
+      } catch (unusedErr) {}
+
+      serverlessFunctionConfig = {
+        'job': {
+          handler: `functions/job.fn`,
+          events: [
+            {
+              schedule: jobConfig.schedule || 'rate(1 minute)'
+            }
+          ]
+        }
+      };
 
       // Output a handler.
-      let pathToFunction = path.resolve(cwd, 'serverless', 'functions', actionName + '.js');
-      let pathToAction = path.relative(path.dirname(pathToFunction), path.resolve(cwd, 'serverless', 'api', 'controllers', actionName + '.js'));
+      let pathToFunction = path.resolve(cwd, 'serverless', 'functions', 'job.js');
+      let pathToMachine = path.relative(path.dirname(pathToFunction), path.resolve(cwd, 'serverless', 'jobs', inputs.j, 'job.js'));
       let pathToWaterline = path.relative(path.dirname(pathToFunction), path.resolve(cwd, 'serverless', 'initialize-waterline.js'));
       let pathToHelpers = path.relative(path.dirname(pathToFunction), path.resolve(cwd, 'serverless', 'initialize-helpers.js'));
 
-      fsx.outputFileSync(pathToFunction, handlerTemplate({ pathToAction, pathToHelpers, pathToWaterline, corsOptions: JSON.stringify(_.get(memo[fnName].events[0].http, 'cors', false)) }));
+      fsx.outputFileSync(pathToFunction, handlerTemplate({ pathToMachine, pathToHelpers, pathToWaterline, corsOptions: '{}', otherOptions: 'eventType: \'generic\'' }));
 
-      return memo;
-
-    }, {});
-
-    // If there's an authorizers folder, create functions for everything in it.
-    let authorizers;
-    try {
-      authorizers = await readdir(path.resolve(cwd, 'serverless', 'api', 'authorizers'));
     }
-    catch (unusedErr) {
-      authorizers = [];
-    }
-
-    _.each(authorizers, (authorizerPath) => {
-      let filePath = `authorizers/${path.basename(authorizerPath)}`;
-      let actionName = filePath.replace(/\.js$/,'');
-      let fnName = _.camelCase(actionName);
-      let pathToFunction = path.resolve(cwd, 'serverless', 'functions', filePath);
-      let pathToAction = path.relative(path.dirname(pathToFunction), authorizerPath);
-      let pathToWaterline = path.relative(path.dirname(pathToFunction), path.resolve(cwd, 'serverless', 'initialize-waterline.js'));
-      let pathToHelpers = path.relative(path.dirname(pathToFunction), path.resolve(cwd, 'serverless', 'initialize-helpers.js'));
-      serverlessFunctionConfig[fnName] = {
-        handler: `functions/${actionName}.fn`,
-      };
-      fsx.outputFileSync(pathToFunction, handlerTemplate({ pathToAction, pathToHelpers, pathToWaterline, corsOptions: true, otherOptions: 'noEnvelope: true' }));
-    });
 
     // Load any serverless file template from config.
     let serverlessYml = {};
@@ -345,6 +426,9 @@ module.exports = {
     // Merge in any options from sails.config.serverless.yml.
     mergeDictionaries(serverlessYml, sails.config.serverless.yml);
 
+    // If this is a job, merge in any options from the job config.
+    mergeDictionaries(serverlessYml, jobConfig.serverlessYml || {});
+
     // Supply some defaults.
     _.defaultsDeep(serverlessYml, {
       service: 'my-service',
@@ -365,11 +449,13 @@ module.exports = {
       serverlessYml.service += '-' + inputs.c;
     }
 
+    // Otherwise append the job name to the service, with the "job" prefix.
+    if (inputs.j) {
+      serverlessYml.service += `-job-${inputs.j}`;
+    }
+
     // Output the serverless config.
     fsx.outputFileSync(path.resolve(cwd, 'serverless', 'serverless.yml'), yamljs.stringify(serverlessYml, 100, 2).replace(/'<<<(.*?)>>>'/mg,'$1'));
-
-    // Output the resource map.
-    fsx.outputFileSync(path.resolve(cwd, 'serverless', 'resources.json'), JSON.stringify(resourceMapping));
 
     // Create "initialize-waterline.js", if using the orm.
     if (useOrm) {
