@@ -59,6 +59,10 @@ module.exports = {
 
     notInProduction: {
       description: 'This app specifies that it should only be deployed in production mode.  Try `NODE_ENV=production sails run deploy-serverless`'
+    },
+
+    configError: {
+      description: 'An error occurred attempting to read a configuration file.'
     }
 
   },
@@ -410,8 +414,14 @@ module.exports = {
     try {
       serverlessYml = yamljs.parse(_.template(fsx.readFileSync(path.resolve(cwd, 'config', 'serverless.yml')).toString())({ sails: { config: sails.config } }));
     }
-    catch (unusedErr) {
-      // no-op
+    catch (err) {
+      if (err.code !== 'ENOENT') {
+        console.log('--------------------------------------------');
+        console.log('Error parsing config/serverless.yml:');
+        console.log(err.message);
+        console.log('--------------------------------------------');
+        return exits.configError();
+      }
     }
 
     // If there is a environment-specific yml file, merge it on top.
@@ -419,8 +429,12 @@ module.exports = {
       let envServerlessYml = yamljs.parse(_.template(fsx.readFileSync(path.resolve(cwd, 'config', `serverless-${sails.config.environment}.yml`)).toString())({ sails: { config: sails.config } }));
       mergeDictionaries(serverlessYml, envServerlessYml);
     }
-    catch (unusedErr) {
-      // no-op
+    catch (err) {
+      console.log('--------------------------------------------');
+      console.log(`Error parsing config/serverless-${sails.config.environment}.yml`);
+      console.log(err.message);
+      console.log('--------------------------------------------');
+      return exits.configError();
     }
 
     // Merge in any options from sails.config.serverless.yml.
