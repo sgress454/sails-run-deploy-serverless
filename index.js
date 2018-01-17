@@ -430,11 +430,13 @@ module.exports = {
       mergeDictionaries(serverlessYml, envServerlessYml);
     }
     catch (err) {
-      console.log('--------------------------------------------');
-      console.log(`Error parsing config/serverless-${sails.config.environment}.yml`);
-      console.log(err.message);
-      console.log('--------------------------------------------');
-      return exits.configError();
+      if (err.code !== 'ENOENT') {
+        console.log('--------------------------------------------');
+        console.log(`Error parsing config/serverless-${sails.config.environment}.yml`);
+        console.log(err.message);
+        console.log('--------------------------------------------');
+        return exits.configError();
+      }
     }
 
     // Merge in any options from sails.config.serverless.yml.
