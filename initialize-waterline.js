@@ -55,6 +55,14 @@ module.exports = function(callback) {
     once: () => {}
   });
 
+  // If the ORM hook has adapters and they have datastores already, bail.  This probably means that
+  // a previous run did not tear down properly (probably because it timed out).
+  if (_.any(_.get(sails, 'hook.orm.adapters') || {}, (adapter, adapterName) => {
+    return _.keys(adapter.datastores || {}).length > 0;
+  })) {
+    return;
+  }
+
   // Load the sails ORM hook.
   _.set(sails, 'hooks.orm', ormHook(sails));
 
