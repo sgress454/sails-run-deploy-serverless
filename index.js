@@ -78,6 +78,7 @@ module.exports = {
     const path = require('path');
     const exec = require('child_process').exec;
     const spawn = require('cross-spawn');
+    const rimraf = require('rimraf');
 
     const cwd = process.cwd();
 
@@ -174,7 +175,7 @@ module.exports = {
     console.log('Cleaning up previous deployments...');
 
     // Remove any existing serverless directory.
-    fsx.removeSync(path.resolve(cwd, 'serverless'));
+    rimraf.sync(path.resolve(cwd, 'serverless'));
 
     console.log('Copying deployment files...');
 
@@ -333,9 +334,9 @@ module.exports = {
 
         // Output a handler.
         let pathToFunction = path.resolve(cwd, 'serverless', 'functions', actionName + '.js');
-        let pathToMachine = path.relative(path.dirname(pathToFunction), path.resolve(cwd, 'serverless', 'api', 'controllers', actionName + '.js'));
-        let pathToWaterline = path.relative(path.dirname(pathToFunction), path.resolve(cwd, 'serverless', 'initialize-waterline.js'));
-        let pathToHelpers = path.relative(path.dirname(pathToFunction), path.resolve(cwd, 'serverless', 'initialize-helpers.js'));
+        let pathToMachine = path.relative(path.dirname(pathToFunction), path.resolve(cwd, 'serverless', 'api', 'controllers', actionName + '.js')).replace(/\\/g,'/');
+        let pathToWaterline = path.relative(path.dirname(pathToFunction), path.resolve(cwd, 'serverless', 'initialize-waterline.js')).replace(/\\/g,'/');
+        let pathToHelpers = path.relative(path.dirname(pathToFunction), path.resolve(cwd, 'serverless', 'initialize-helpers.js')).replace(/\\/g,'/');
 
         fsx.outputFileSync(pathToFunction, handlerTemplate({ pathToMachine, pathToHelpers, pathToWaterline, corsOptions: JSON.stringify(_.get(memo[fnName].events[0].http, 'cors', false)) }));
 
@@ -357,9 +358,9 @@ module.exports = {
         let actionName = filePath.replace(/\.js$/,'');
         let fnName = _.camelCase(actionName);
         let pathToFunction = path.resolve(cwd, 'serverless', 'functions', filePath);
-        let pathToMachine = path.relative(path.dirname(pathToFunction), authorizerPath);
-        let pathToWaterline = path.relative(path.dirname(pathToFunction), path.resolve(cwd, 'serverless', 'initialize-waterline.js'));
-        let pathToHelpers = path.relative(path.dirname(pathToFunction), path.resolve(cwd, 'serverless', 'initialize-helpers.js'));
+        let pathToMachine = path.relative(path.dirname(pathToFunction), authorizerPath).replace(/\\/g,'/');
+        let pathToWaterline = path.relative(path.dirname(pathToFunction), path.resolve(cwd, 'serverless', 'initialize-waterline.js')).replace(/\\/g,'/');
+        let pathToHelpers = path.relative(path.dirname(pathToFunction), path.resolve(cwd, 'serverless', 'initialize-helpers.js')).replace(/\\/g,'/');
         serverlessFunctionConfig[fnName] = {
           handler: `functions/${actionName}.fn`,
         };
@@ -401,9 +402,9 @@ module.exports = {
 
       // Output a handler.
       let pathToFunction = path.resolve(cwd, 'serverless', 'functions', 'job.js');
-      let pathToMachine = path.relative(path.dirname(pathToFunction), path.resolve(cwd, 'serverless', 'jobs', inputs.j, 'job.js'));
-      let pathToWaterline = path.relative(path.dirname(pathToFunction), path.resolve(cwd, 'serverless', 'initialize-waterline.js'));
-      let pathToHelpers = path.relative(path.dirname(pathToFunction), path.resolve(cwd, 'serverless', 'initialize-helpers.js'));
+      let pathToMachine = path.relative(path.dirname(pathToFunction), path.resolve(cwd, 'serverless', 'jobs', inputs.j, 'job.js')).replace(/\\/g,'/');
+      let pathToWaterline = path.relative(path.dirname(pathToFunction), path.resolve(cwd, 'serverless', 'initialize-waterline.js')).replace(/\\/g,'/');
+      let pathToHelpers = path.relative(path.dirname(pathToFunction), path.resolve(cwd, 'serverless', 'initialize-helpers.js')).replace(/\\/g,'/');
 
       fsx.outputFileSync(pathToFunction, handlerTemplate({ pathToMachine, pathToHelpers, pathToWaterline, corsOptions: '{}', otherOptions: 'eventType: \'generic\'' }));
 
