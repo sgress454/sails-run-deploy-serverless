@@ -334,8 +334,8 @@ module.exports = {
         // Output a handler.
         let pathToFunction = path.resolve(cwd, 'serverless', 'functions', actionName + '.js');
         let pathToMachine = path.relative(path.dirname(pathToFunction), path.resolve(cwd, 'serverless', 'api', 'controllers', actionName + '.js'));
-        let pathToWaterline = path.relative(path.dirname(pathToFunction), path.resolve(cwd, 'serverless', 'initialize-waterline.js'));
-        let pathToHelpers = path.relative(path.dirname(pathToFunction), path.resolve(cwd, 'serverless', 'initialize-helpers.js'));
+        let pathToWaterline = path.posix.relative(path.dirname(pathToFunction), path.resolve(cwd, 'serverless', 'initialize-waterline.js'));
+        let pathToHelpers = path.posix.relative(path.dirname(pathToFunction), path.resolve(cwd, 'serverless', 'initialize-helpers.js'));
 
         fsx.outputFileSync(pathToFunction, handlerTemplate({ pathToMachine, pathToHelpers, pathToWaterline, corsOptions: JSON.stringify(_.get(memo[fnName].events[0].http, 'cors', false)) }));
 
@@ -358,8 +358,8 @@ module.exports = {
         let fnName = _.camelCase(actionName);
         let pathToFunction = path.resolve(cwd, 'serverless', 'functions', filePath);
         let pathToMachine = path.relative(path.dirname(pathToFunction), authorizerPath);
-        let pathToWaterline = path.relative(path.dirname(pathToFunction), path.resolve(cwd, 'serverless', 'initialize-waterline.js'));
-        let pathToHelpers = path.relative(path.dirname(pathToFunction), path.resolve(cwd, 'serverless', 'initialize-helpers.js'));
+        let pathToWaterline = path.posix.relative(path.dirname(pathToFunction), path.resolve(cwd, 'serverless', 'initialize-waterline.js'));
+        let pathToHelpers = path.posix.relative(path.dirname(pathToFunction), path.resolve(cwd, 'serverless', 'initialize-helpers.js'));
         serverlessFunctionConfig[fnName] = {
           handler: `functions/${actionName}.fn`,
         };
@@ -402,8 +402,8 @@ module.exports = {
       // Output a handler.
       let pathToFunction = path.resolve(cwd, 'serverless', 'functions', 'job.js');
       let pathToMachine = path.relative(path.dirname(pathToFunction), path.resolve(cwd, 'serverless', 'jobs', inputs.j, 'job.js'));
-      let pathToWaterline = path.relative(path.dirname(pathToFunction), path.resolve(cwd, 'serverless', 'initialize-waterline.js'));
-      let pathToHelpers = path.relative(path.dirname(pathToFunction), path.resolve(cwd, 'serverless', 'initialize-helpers.js'));
+      let pathToWaterline = path.posix.relative(path.dirname(pathToFunction), path.resolve(cwd, 'serverless', 'initialize-waterline.js'));
+      let pathToHelpers = path.posix.relative(path.dirname(pathToFunction), path.resolve(cwd, 'serverless', 'initialize-helpers.js'));
 
       fsx.outputFileSync(pathToFunction, handlerTemplate({ pathToMachine, pathToHelpers, pathToWaterline, corsOptions: '{}', otherOptions: 'eventType: \'generic\'' }));
 
