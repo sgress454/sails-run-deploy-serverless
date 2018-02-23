@@ -17,6 +17,7 @@
     "grunt": "1.0.1",
     "merge-dictionaries": "^1.0.0",
     "recursive-readdir": "^2.2.1",
+    "rimraf": "^2.6.2",
     "yamljs": "0.3.0"
   },
   "devDependencies": {

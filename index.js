@@ -78,6 +78,7 @@ module.exports = {
     const path = require('path');
     const exec = require('child_process').exec;
     const spawn = require('cross-spawn');
+    const rimraf = require('rimraf');
 
     const cwd = process.cwd();
 
@@ -174,7 +175,7 @@ module.exports = {
     console.log('Cleaning up previous deployments...');
 
     // Remove any existing serverless directory.
-    fsx.removeSync(path.resolve(cwd, 'serverless'));
+    rimraf.sync(path.resolve(cwd, 'serverless'));
 
     console.log('Copying deployment files...');
 
