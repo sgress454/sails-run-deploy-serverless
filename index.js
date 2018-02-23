@@ -77,7 +77,7 @@ module.exports = {
     const fsx = require('fs-extra');
     const path = require('path');
     const exec = require('child_process').exec;
-    const spawn = require('child_process').spawn;
+    const spawn = require('cross-spawn');
 
     const cwd = process.cwd();
 

@@ -12,6 +12,7 @@
     "@sailshq/lodash": "^3.10.2",
     "babel-core": "^6.26.0",
     "babel-preset-env": "^1.6.1",
+    "cross-spawn": "^6.0.4",
     "fs-extra": "4.0.3",
     "grunt": "1.0.1",
     "merge-dictionaries": "^1.0.0",
